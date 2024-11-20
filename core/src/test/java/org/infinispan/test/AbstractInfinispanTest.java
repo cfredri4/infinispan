@@ -94,7 +94,7 @@ public abstract class AbstractInfinispanTest {
    protected static final Log log = LogFactory.getLog(MethodHandles.lookup().lookupClass());
 
    private final ThreadFactory defaultThreadFactory = getTestThreadFactory("ForkThread");
-   private final ExecutorService testExecutor = ThreadCreator.createBlockingExecutorService()
+   private final ExecutorService testExecutor = ThreadCreator.createBlockingExecutorService(ThreadCreator.useVirtualThreads())
          .orElseGet(() -> new ThreadPoolExecutor(0, Integer.MAX_VALUE,
                60L, TimeUnit.SECONDS,
                new SynchronousQueue<>(),

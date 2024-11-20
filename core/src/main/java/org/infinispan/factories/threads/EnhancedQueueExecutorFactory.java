@@ -17,6 +17,9 @@ import org.jboss.threads.EnhancedQueueExecutor;
  * @author wburns
  */
 public class EnhancedQueueExecutorFactory extends AbstractThreadPoolExecutorFactory<ExecutorService> {
+
+   private final boolean useVirtualThreads = ThreadCreator.useVirtualThreads();
+
    protected EnhancedQueueExecutorFactory(int maxThreads, int coreThreads, int queueLength, long keepAlive) {
       super(maxThreads, coreThreads, queueLength, keepAlive);
    }
@@ -33,7 +36,7 @@ public class EnhancedQueueExecutorFactory extends AbstractThreadPoolExecutorFact
          throw new IllegalStateException("Executor factory configured to be blocking and received a thread" +
                " factory that creates non-blocking threads!");
       }
-      return ThreadCreator.createBlockingExecutorService().orElseGet(() -> {
+      return ThreadCreator.createBlockingExecutorService(useVirtualThreads).orElseGet(() -> {
          EnhancedQueueExecutor.Builder builder = new EnhancedQueueExecutor.Builder();
          builder.setThreadFactory(factory);
          builder.setCorePoolSize(coreThreads);

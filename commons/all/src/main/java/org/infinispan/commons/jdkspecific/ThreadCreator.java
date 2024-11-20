@@ -2,8 +2,8 @@ package org.infinispan.commons.jdkspecific;
 
 import java.util.Optional;
 import java.util.concurrent.ExecutorService;
-
 import org.infinispan.commons.logging.Log;
+import org.infinispan.commons.spi.VirtualThreadCreator;
 import org.infinispan.commons.util.Util;
 
 /**
@@ -12,51 +12,53 @@ import org.infinispan.commons.util.Util;
  **/
 public class ThreadCreator {
 
-   private static boolean useVirtualThreads = Boolean.getBoolean("org.infinispan.threads.virtual");
-   private static org.infinispan.commons.spi.ThreadCreator INSTANCE = getInstance(useVirtualThreads);
+   private static final VirtualThreadCreator VIRTUAL_THREAD_CREATOR;
+   private static final Throwable VIRTUAL_THREAD_UNAVAILABILITY_CAUSE;
+   static {
+       VirtualThreadCreator creator;
+       Throwable cause;
+       try {
+          creator = Util.getInstance("org.infinispan.commons.jdk21.VirtualThreadCreatorImpl", ThreadCreator.class.getClassLoader());
+          cause = null;
+       } catch (Throwable t) {
+          creator = null;
+          cause = t;
+       }
+       VIRTUAL_THREAD_CREATOR = creator;
+       VIRTUAL_THREAD_UNAVAILABILITY_CAUSE = cause;
+   }
+
+   private static boolean useVirtualThreads;
+   static {
+      useVirtualThreads(Boolean.getBoolean("org.infinispan.threads.virtual"));
+   }
 
    public static void useVirtualThreads(boolean useVirtualThreads) {
-      if (useVirtualThreads != ThreadCreator.useVirtualThreads) {
-         ThreadCreator.useVirtualThreads = useVirtualThreads;
-         INSTANCE = getInstance(useVirtualThreads);
+      if (useVirtualThreads) {
+         if (VIRTUAL_THREAD_CREATOR != null) {
+            ThreadCreator.useVirtualThreads = true;
+            Log.CONTAINER.infof("Virtual threads support enabled");
+         } else {
+            Log.CONTAINER.debugf("Could not initialize virtual threads", VIRTUAL_THREAD_UNAVAILABILITY_CAUSE);
+         }
+      } else {
+         ThreadCreator.useVirtualThreads = false;
       }
    }
 
    public static boolean useVirtualThreads() {
-      return useVirtualThreads;
+      return ThreadCreator.useVirtualThreads;
    }
 
-   public static Thread createThread(ThreadGroup threadGroup, Runnable target, boolean useVirtualThread) {
-      return INSTANCE.createThread(threadGroup, target, useVirtualThread);
+   public static Thread createThread(ThreadGroup threadGroup, Runnable target, boolean useVirtualThreads) {
+      return useVirtualThreads && VIRTUAL_THREAD_CREATOR != null
+            ? VIRTUAL_THREAD_CREATOR.newVirtualThread(target)
+            : new Thread(threadGroup, target);
    }
 
-   public static Optional<ExecutorService> createBlockingExecutorService() {
-      return INSTANCE.newVirtualThreadPerTaskExecutor();
-   }
-
-   private static org.infinispan.commons.spi.ThreadCreator getInstance(boolean useVirtualThreads) {
-      try {
-         if (useVirtualThreads) {
-            org.infinispan.commons.spi.ThreadCreator instance = Util.getInstance("org.infinispan.commons.jdk21.ThreadCreatorImpl", ThreadCreator.class.getClassLoader());
-            Log.CONTAINER.infof("Virtual threads support enabled");
-            return instance;
-         }
-      } catch (Throwable t) {
-         Log.CONTAINER.debugf("Could not initialize virtual threads", t);
-      }
-      return new ThreadCreatorImpl();
-   }
-
-   private static class ThreadCreatorImpl implements org.infinispan.commons.spi.ThreadCreator {
-
-      @Override
-      public Thread createThread(ThreadGroup threadGroup, Runnable target, boolean lightweight) {
-         return new Thread(threadGroup, target);
-      }
-
-      @Override
-      public Optional<ExecutorService> newVirtualThreadPerTaskExecutor() {
-         return Optional.empty();
-      }
+   public static Optional<ExecutorService> createBlockingExecutorService(boolean useVirtualThreads) {
+      return useVirtualThreads && VIRTUAL_THREAD_CREATOR != null
+            ? Optional.of(VIRTUAL_THREAD_CREATOR.newVirtualThreadPerTaskExecutor())
+            : Optional.empty();
    }
 }
